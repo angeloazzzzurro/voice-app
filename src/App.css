@@ -1,30 +1,30 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  /* Apple Dark */
-  --bg:          #000000;
-  --bg2:         #1C1C1E;
-  --bg3:         #2C2C2E;
-  --fill:        rgba(255,255,255,0.05);
-  --fill2:       rgba(255,255,255,0.09);
-  --separator:   rgba(255,255,255,0.12);
-  --label:       #FFFFFF;
-  --label2:      rgba(255,255,255,0.55);
-  --label3:      rgba(255,255,255,0.25);
+  /* Primary GameCube palette */
+  --bg:          #F8F8FF;
+  --bg2:         #FFFFFF;
+  --bg3:         #F1F3F9;
+  --fill:        rgba(63, 42, 140, 0.06);
+  --fill2:       rgba(63, 42, 140, 0.10);
+  --separator:   #C7CCD6;
+  --label:       #22223B;
+  --label2:      #5E5F7A;
+  --label3:      #8B8FA7;
 
-  /* System accent — Apple Purple */
-  --accent:      #BF5AF2;
-  --accent-fill: rgba(191,90,242,0.18);
-  --green:       #30D158;
-  --green-glow:  rgba(48,209,88,0.3);
-  --red:         #FF453A;
+  --accent:      #3F2A8C;
+  --accent-strong: #5A31A6;
+  --accent-fill: rgba(63, 42, 140, 0.12);
+  --green:       #C8F7DC;
+  --green-glow:  rgba(200, 247, 220, 0.35);
+  --red:         #FFC9DE;
 
   --radius:      13px;
   --radius-lg:   22px;
 }
 
 body {
-  background: var(--bg);
+  background: linear-gradient(180deg, #F8F8FF 0%, #F3F4FB 100%);
   color: var(--label);
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', system-ui, sans-serif;
   height: 100dvh;
@@ -916,6 +916,32 @@ body {
   line-height: 1.5;
   margin: 0;
 }
+
+/* ─── RECORD ACTIONS ────────────────────────────────── */
+
+.record-actions {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.btn-upload-file {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--fill2);
+  border: none;
+  color: var(--label2);
+  font-size: 1.2rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+
+.btn-upload-file:active { opacity: 0.5; }
 
 /* ─── UTILS ─────────────────────────────────────────── */
 

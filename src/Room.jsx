@@ -156,6 +156,15 @@ function DayView({ roomDef, dayKey, notes, myId, onBack, onNewNote }) {
     setUploading(false)
   }
 
+  const fileInputRef = useRef(null)
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    e.target.value = ''
+    await sendNote(file)
+  }
+
   const isToday = dayKey === new Date().toDateString()
 
   return (
@@ -206,16 +215,30 @@ function DayView({ roomDef, dayKey, notes, myId, onBack, onNewNote }) {
           <p className="record-hint">
             {isRecording ? 'Rilascia per salvare' : 'Tieni premuto per registrare'}
           </p>
-          <button
-            className={isRecording ? 'btn-mic recording' : 'btn-mic'}
-            onMouseDown={startRecording}
-            onMouseUp={stopRecording}
-            onTouchStart={e => { e.preventDefault(); startRecording() }}
-            onTouchEnd={e => { e.preventDefault(); stopRecording() }}
-            disabled={uploading}
-          >
-            {isRecording ? '⏹' : '🎤'}
-          </button>
+          <div className="record-actions">
+            <label className="btn-upload-file" title="Carica file audio (MP3, M4A, WAV…)">
+              📎
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="audio/*,.mp3,.m4a,.wav,.ogg,.aac,.flac"
+                onChange={handleFileUpload}
+                hidden
+                disabled={uploading || isRecording}
+              />
+            </label>
+            <button
+              className={isRecording ? 'btn-mic recording' : 'btn-mic'}
+              onMouseDown={startRecording}
+              onMouseUp={stopRecording}
+              onTouchStart={e => { e.preventDefault(); startRecording() }}
+              onTouchEnd={e => { e.preventDefault(); stopRecording() }}
+              disabled={uploading}
+            >
+              {isRecording ? '⏹' : '🎤'}
+            </button>
+            <div style={{ width: '42px' }} />
+          </div>
         </div>
       )}
     </div>

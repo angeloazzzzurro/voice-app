@@ -29,12 +29,23 @@ if (existsSync(DATA_FILE)) {
 }
 const save = () => writeFileSync(DATA_FILE, JSON.stringify(data, null, 2))
 
-// Multer: save audio to uploads/
+// Multer: save audio to uploads/ (webm dalla registrazione, mp3/m4a/wav dall'upload)
+const ALLOWED_AUDIO = ['webm', 'mp3', 'm4a', 'wav', 'ogg', 'aac', 'flac']
 const storage = multer.diskStorage({
   destination: 'uploads/',
-  filename: (_, __, cb) => cb(null, `${Date.now()}-${randomBytes(4).toString('hex')}.webm`)
+  filename: (_, file, cb) => {
+    const parts = file.originalname.split('.')
+    const ext = parts.length > 1 ? parts.pop().toLowerCase() : 'webm'
+    cb(null, `${Date.now()}-${randomBytes(4).toString('hex')}.${ext}`)
+  }
 })
-const upload = multer({ storage })
+const upload = multer({
+  storage,
+  fileFilter: (_, file, cb) => {
+    const ext = file.originalname.split('.').pop().toLowerCase()
+    cb(null, file.mimetype.startsWith('audio/') || ALLOWED_AUDIO.includes(ext))
+  }
+})
 
 // ── API ──────────────────────────────────────────────
 

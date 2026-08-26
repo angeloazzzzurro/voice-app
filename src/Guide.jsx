@@ -16,24 +16,52 @@ export default function Guide({ onBack }) {
 
         <section className="guide-section">
           <h2>📼 Come funziona</h2>
-          <p>Il Diario Vocale è il tuo spazio personale per registrare pensieri, emozioni e momenti attraverso la voce. Ogni stanza ha un tema: puoi usarle tutte o solo quelle che senti tue.</p>
+          <p>Registra pensieri, emozioni e momenti con la voce. Puoi usare il microfono direttamente nell'app oppure caricare file audio registrati altrove.</p>
+          <div className="guide-steps">
+            <div className="guide-step"><span className="step-num">1</span><span>Scegli una stanza dalla home</span></div>
+            <div className="guide-step"><span className="step-num">2</span><span>Seleziona il giorno (oggi è sempre in cima)</span></div>
+            <div className="guide-step"><span className="step-num">3</span><span>Tieni premuto 🎤 per registrare, oppure tocca 📎 per caricare un file</span></div>
+            <div className="guide-step"><span className="step-num">4</span><span>Le note sono organizzate automaticamente per giorno e stanza</span></div>
+          </div>
+        </section>
+
+        <section className="guide-section">
+          <h2>🎙️ Come registrare note vocali</h2>
           <div className="guide-steps">
             <div className="guide-step">
-              <span className="step-num">1</span>
-              <span>Scegli una stanza dalla home</span>
+              <span className="step-num">A</span>
+              <span><strong>Direttamente nell'app</strong> — tieni premuto il tasto 🎤 e parla. Rilascia per salvare.</span>
             </div>
             <div className="guide-step">
-              <span className="step-num">2</span>
-              <span>Tieni premuto il microfono 🎤 e parla</span>
+              <span className="step-num">B</span>
+              <span><strong>App del telefono</strong> — usa Memo Vocali (iOS) o Registratore Vocale (Android), poi carica il file con 📎.</span>
             </div>
             <div className="guide-step">
-              <span className="step-num">3</span>
-              <span>Rilascia per salvare la nota</span>
+              <span className="step-num">C</span>
+              <span><strong>Suggerimento</strong> — dai un titolo provvisorio al file subito dopo la registrazione (es. <em>"2026-08-26-gratitudine.m4a"</em>).</span>
             </div>
-            <div className="guide-step">
-              <span className="step-num">4</span>
-              <span>Le note sono organizzate per giorno</span>
-            </div>
+          </div>
+        </section>
+
+        <section className="guide-section">
+          <h2>📎 Come caricare file audio</h2>
+          <p>Entra in una stanza, seleziona il giorno e tocca il tasto 📎 accanto al microfono. Seleziona il file dal dispositivo — viene caricato automaticamente.</p>
+          <div className="guide-steps">
+            <div className="guide-step"><span className="step-num">1</span><span>Entra nella stanza e apri il giorno corretto</span></div>
+            <div className="guide-step"><span className="step-num">2</span><span>Tocca 📎 e scegli il file audio dal dispositivo</span></div>
+            <div className="guide-step"><span className="step-num">3</span><span>Attendi il caricamento — la nota appare nella lista</span></div>
+          </div>
+        </section>
+
+        <section className="guide-section">
+          <h2>🎵 Formati audio supportati</h2>
+          <p>Funzionano senza problemi i formati comuni:</p>
+          <div className="guide-steps">
+            <div className="guide-step"><span className="step-num">✓</span><span><strong>MP3</strong> — formato universale, ideale per condivisione</span></div>
+            <div className="guide-step"><span className="step-num">✓</span><span><strong>M4A</strong> — formato nativo iOS (Memo Vocali)</span></div>
+            <div className="guide-step"><span className="step-num">✓</span><span><strong>WAV</strong> — massima qualità, file più pesanti</span></div>
+            <div className="guide-step"><span className="step-num">✓</span><span><strong>OGG / AAC / FLAC</strong> — supportati</span></div>
+            <div className="guide-step"><span className="step-num">!</span><span>Se un file non si riproduce, convertilo in MP3 (128–192 kbps) e ricarica</span></div>
           </div>
         </section>
 
@@ -63,14 +91,25 @@ export default function Guide({ onBack }) {
         </section>
 
         <section className="guide-section">
+          <h2>🔊 Consigli per la qualità audio</h2>
+          <ul className="guide-tips">
+            <li><strong>Ambiente silenzioso</strong> — attiva la modalità aereo per evitare notifiche durante la registrazione.</li>
+            <li><strong>Distanza</strong> — tieni il microfono a 10–20 cm dalla bocca; parla chiaro e a volume costante.</li>
+            <li><strong>Durata ideale</strong> — 1–3 minuti è perfetto per riascolto e riflessione.</li>
+            <li><strong>Naming</strong> — se carichi file esterni, usa lo schema <em>"AAAA-MM-GG Stanza - Titolo"</em> (es. "2026-08-26 Gratitudine - Tre cose.mp3").</li>
+            <li><strong>Tecnico</strong> — evita sfregamenti sul microfono; se possibile registra a 44.1 kHz in mono.</li>
+          </ul>
+        </section>
+
+        <section className="guide-section">
           <h2>💡 Consigli pratici</h2>
           <ul className="guide-tips">
             <li>Registra anche solo <strong>30 secondi</strong> al giorno — la costanza conta più della lunghezza.</li>
             <li>Non filtrarti. Parla come stai pensando, non come vorresti sembrare.</li>
-            <li>Ascolta le tue note vecchie una volta a settimana — ti sorprenderà quanto cambi.</li>
-            <li>Usa la stanza <strong>Sogni</strong> appena sveglio/a, prima che i sogni svaniscano.</li>
+            <li>Riascolta le note vecchie una volta a settimana — ti sorprenderà quanto cambi.</li>
+            <li>Usa <strong>Sogni</strong> appena sveglio/a, prima che i sogni svaniscano.</li>
             <li>Negli <strong>Sfoghi</strong> non c'è niente di sbagliato — è un posto sicuro.</li>
-            <li>Il <strong>Calendario</strong> ti mostra i pattern: quali giorni registri di più? In quali stanze?</li>
+            <li>Il <strong>Calendario</strong> mostra i pattern: quali giorni registri di più? In quali stanze?</li>
           </ul>
         </section>
 
@@ -123,9 +162,9 @@ export default function Guide({ onBack }) {
 function whenToUse(id) {
   return {
     riflessione: 'Quando hai un pensiero che non riesci a toglierti dalla testa, o vuoi capire come ti senti davvero.',
-    quotidiano: 'Ogni sera per raccontare la giornata, o quando succede qualcosa che vale la pena ricordare.',
-    gratitudine: 'La mattina o la sera, per anccorarti al positivo e riconoscere le piccole cose belle.',
-    sogni: 'Appena sveglio/a per catturare i sogni, o quando hai un desiderio che vuoi tenere vivo.',
-    sfoghi: 'Quando sei sopraffatto/a, arrabbiato/a o frustrato/a e hai bisogno di tirare fuori tutto.',
+    quotidiano:  'Ogni sera per raccontare la giornata, o quando succede qualcosa che vale la pena ricordare.',
+    gratitudine: 'La mattina o la sera, per ancorarti al positivo e riconoscere le piccole cose belle.',
+    sogni:       'Appena sveglio/a per catturare i sogni, o quando hai un desiderio che vuoi tenere vivo.',
+    sfoghi:      'Quando sei sopraffatto/a, arrabbiato/a o frustrato/a e hai bisogno di tirare fuori tutto.',
   }[id]
 }
