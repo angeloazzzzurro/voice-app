@@ -1,36 +1,24 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import Home from './Home'
 import Room from './Room'
+import Guide from './Guide'
 import './App.css'
 
 export default function App() {
-  // Legge il codice stanza dall'URL: es. http://.../#ABC123
-  const [roomCode, setRoomCode] = useState(() => {
-    const hash = window.location.hash.replace('#', '').trim().toUpperCase()
-    return hash || null
-  })
+  const [view, setView] = useState('home') // 'home' | 'room' | 'guide'
+  const [selectedRoom, setSelectedRoom] = useState(null)
 
-  const enterRoom = (code) => {
-    window.location.hash = code
-    setRoomCode(code)
-  }
-
-  const leaveRoom = () => {
-    window.location.hash = ''
-    setRoomCode(null)
-  }
-
-  // Aggiorna lo stato se l'hash cambia (es. tasto indietro del browser)
-  useEffect(() => {
-    const onHash = () => {
-      const hash = window.location.hash.replace('#', '').trim().toUpperCase()
-      setRoomCode(hash || null)
-    }
-    window.addEventListener('hashchange', onHash)
-    return () => window.removeEventListener('hashchange', onHash)
-  }, [])
-
-  return roomCode
-    ? <Room roomCode={roomCode} onLeave={leaveRoom} />
-    : <Home onEnterRoom={enterRoom} />
+  if (view === 'guide') return <Guide onBack={() => setView('home')} />
+  if (view === 'room') return (
+    <Room
+      roomDef={selectedRoom}
+      onLeave={() => setView('home')}
+    />
+  )
+  return (
+    <Home
+      onEnterRoom={(roomDef) => { setSelectedRoom(roomDef); setView('room') }}
+      onGuide={() => setView('guide')}
+    />
+  )
 }

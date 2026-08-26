@@ -10,31 +10,108 @@ function getMyId() {
   return id
 }
 
-export default function Room({ roomCode, onLeave }) {
+function getDayLabel(dateStr) {
+  const d = new Date(dateStr)
+  const today = new Date()
+  const yesterday = new Date(); yesterday.setDate(today.getDate() - 1)
+  if (d.toDateString() === today.toDateString()) return 'Oggi'
+  if (d.toDateString() === yesterday.toDateString()) return 'Ieri'
+  return d.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })
+}
+
+export default function Room({ roomDef, onLeave }) {
+  const { code: roomCode, name, icon, color, colorDark, colorBg } = roomDef
   const [notes, setNotes] = useState([])
-  const [isRecording, setIsRecording] = useState(false)
-  const [uploading, setUploading] = useState(false)
-  const [copied, setCopied] = useState(false)
-  const mediaRecorderRef = useRef(null)
-  const chunksRef = useRef([])
-  const bottomRef = useRef(null)
+  const [selectedDay, setSelectedDay] = useState(null)
   const myId = useMemo(() => getMyId(), [])
 
   useEffect(() => {
-    // Carica note esistenti
     fetch(`/api/rooms/${roomCode}`)
       .then(r => r.json())
       .then(d => setNotes(d.notes || []))
 
-    // Connessione socket per note in tempo reale
     const socket = io()
     socket.emit('join-room', roomCode)
-    socket.on('new-note', note => {
-      setNotes(prev => [...prev, note])
-    })
-
+    socket.on('new-note', note => setNotes(prev => [...prev, note]))
     return () => socket.disconnect()
   }, [roomCode])
+
+  // Group notes by day, today always present, newest first
+  const days = useMemo(() => {
+    const groups = {}
+    notes.forEach(note => {
+      if (!note.createdAt) return
+      const key = new Date(note.createdAt).toDateString()
+      if (!groups[key]) groups[key] = []
+      groups[key].push(note)
+    })
+    const todayKey = new Date().toDateString()
+    if (!groups[todayKey]) groups[todayKey] = []
+    return Object.entries(groups).sort((a, b) => new Date(b[0]) - new Date(a[0]))
+  }, [notes])
+
+  if (selectedDay !== null) {
+    const dayNotes = days.find(([k]) => k === selectedDay)?.[1] || []
+    return (
+      <DayView
+        roomDef={roomDef}
+        dayKey={selectedDay}
+        notes={dayNotes}
+        myId={myId}
+        onBack={() => setSelectedDay(null)}
+        onNewNote={note => setNotes(prev => [...prev, note])}
+      />
+    )
+  }
+
+  return (
+    <div className="room" style={{ '--room-color': color }}>
+      <header className="nav-bar">
+        <button className="btn-icon" onClick={onLeave}>&#8592;</button>
+        <div className="nav-title-block">
+          <span className="nav-eyebrow">Diario</span>
+          <span className="nav-title-colored" style={{ color }}>{icon} {name}</span>
+        </div>
+        <div style={{ width: '34px' }} />
+      </header>
+
+      <div className="diary-list">
+        {days.map(([dayKey, dayNotes]) => (
+          <button
+            key={dayKey}
+            className="diary-day-card"
+            style={{ '--room-color': color }}
+            onClick={() => setSelectedDay(dayKey)}
+          >
+            <div className="diary-day-left">
+              <span className="diary-day-label">{getDayLabel(dayKey)}</span>
+              <span className="diary-day-date">
+                {new Date(dayKey).toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' })}
+              </span>
+            </div>
+            <div className="diary-day-right">
+              {dayNotes.length > 0
+                ? <span className="diary-note-count" style={{ color, background: `${color}22`, borderColor: `${color}44` }}>
+                    {dayNotes.length} {dayNotes.length === 1 ? 'nota' : 'note'}
+                  </span>
+                : <span className="diary-note-empty">Nessuna nota</span>
+              }
+              <span className="diary-arrow" style={{ color }}>›</span>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function DayView({ roomDef, dayKey, notes, myId, onBack, onNewNote }) {
+  const { color } = roomDef
+  const [isRecording, setIsRecording] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const mediaRecorderRef = useRef(null)
+  const chunksRef = useRef([])
+  const bottomRef = useRef(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -60,9 +137,7 @@ export default function Room({ roomCode, onLeave }) {
   }
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current?.state === 'recording') {
-      mediaRecorderRef.current.stop()
-    }
+    if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop()
     setIsRecording(false)
   }
 
@@ -72,52 +147,46 @@ export default function Room({ roomCode, onLeave }) {
       const form = new FormData()
       form.append('audio', blob, 'nota.webm')
       form.append('senderId', myId)
-      await fetch(`/api/rooms/${roomCode}/notes`, { method: 'POST', body: form })
+      const res = await fetch(`/api/rooms/${roomDef.code}/notes`, { method: 'POST', body: form })
+      const note = await res.json()
+      if (note?.id) onNewNote(note)
     } catch {
       alert("Errore durante l'invio. Riprova.")
     }
     setUploading(false)
   }
 
-  const shareUrl = window.location.href
-
-  const copyLink = () => {
-    navigator.clipboard.writeText(shareUrl)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
+  const isToday = dayKey === new Date().toDateString()
 
   return (
-    <div className="room">
-      <header className="room-header">
-        <button className="btn-icon" onClick={onLeave}>&#8592;</button>
-        <div className="room-title">
-          <span className="room-label">Stanza</span>
-          <span className="room-code-display">{roomCode}</span>
+    <div className="room" style={{ '--room-color': color }}>
+      <header className="nav-bar">
+        <button className="btn-icon" onClick={onBack}>&#8592;</button>
+        <div className="nav-title-block">
+          <span className="nav-title">{getDayLabel(dayKey)}</span>
+          <span className="nav-eyebrow">
+            {new Date(dayKey).toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' })}
+          </span>
         </div>
-        <button className="btn-share" onClick={copyLink}>
-          {copied ? '✓ Copiato' : 'Condividi link'}
-        </button>
+        <div style={{ width: '34px' }} />
       </header>
 
       <div className="messages">
         {notes.length === 0 && !uploading && (
           <div className="empty-state">
-            <div className="empty-icon">🎙️</div>
-            <p>Nessuna nota ancora.</p>
-            <p className="empty-hint">Tieni premuto il microfono per registrare la tua prima nota.</p>
-            <div className="share-box">
-              <p>Condividi questo link con chi ami:</p>
-              <div className="share-code" onClick={copyLink}>
-                {shareUrl}
-                <span>{copied ? ' copiato!' : ' — tocca per copiare'}</span>
-              </div>
-            </div>
+            <div className="empty-icon">{roomDef.icon}</div>
+            <p>Nessuna nota per questo giorno.</p>
+            {isToday && (
+              <>
+                <p className="empty-hint">Tieni premuto il microfono per registrare.</p>
+                <p className="empty-hint" style={{ color, marginTop: '0.5rem' }}>"{roomDef.prompt}"</p>
+              </>
+            )}
           </div>
         )}
 
         {notes.map(note => (
-          <NoteMessage key={note.id} note={note} isMine={note.senderId === myId} />
+          <NoteMessage key={note.id} note={note} isMine={note.senderId === myId} color={color} />
         ))}
 
         {uploading && (
@@ -132,26 +201,28 @@ export default function Room({ roomCode, onLeave }) {
         <div ref={bottomRef} />
       </div>
 
-      <div className="record-bar">
-        <p className="record-hint">
-          {isRecording ? 'Rilascia per inviare' : 'Tieni premuto per registrare'}
-        </p>
-        <button
-          className={isRecording ? 'btn-mic recording' : 'btn-mic'}
-          onMouseDown={startRecording}
-          onMouseUp={stopRecording}
-          onTouchStart={e => { e.preventDefault(); startRecording() }}
-          onTouchEnd={e => { e.preventDefault(); stopRecording() }}
-          disabled={uploading}
-        >
-          {isRecording ? '⏹' : '🎤'}
-        </button>
-      </div>
+      {isToday && (
+        <div className="record-bar">
+          <p className="record-hint">
+            {isRecording ? 'Rilascia per salvare' : 'Tieni premuto per registrare'}
+          </p>
+          <button
+            className={isRecording ? 'btn-mic recording' : 'btn-mic'}
+            onMouseDown={startRecording}
+            onMouseUp={stopRecording}
+            onTouchStart={e => { e.preventDefault(); startRecording() }}
+            onTouchEnd={e => { e.preventDefault(); stopRecording() }}
+            disabled={uploading}
+          >
+            {isRecording ? '⏹' : '🎤'}
+          </button>
+        </div>
+      )}
     </div>
   )
 }
 
-function NoteMessage({ note, isMine }) {
+function NoteMessage({ note, isMine, color }) {
   const [playing, setPlaying] = useState(false)
   const [progress, setProgress] = useState(0)
   const [duration, setDuration] = useState(0)
@@ -183,7 +254,7 @@ function NoteMessage({ note, isMine }) {
 
   return (
     <div className={`message ${isMine ? 'mine' : 'theirs'}`}>
-      <div className="bubble">
+      <div className="bubble" style={isMine ? { background: `${color}33`, borderColor: `${color}66` } : {}}>
         <audio
           ref={audioRef}
           src={note.audioUrl}
@@ -206,7 +277,11 @@ function NoteMessage({ note, isMine }) {
             <div
               key={i}
               className="bar"
-              style={{ height: `${h}px`, opacity: i / bars.length < progress ? 1 : 0.35 }}
+              style={{
+                height: `${h}px`,
+                background: isMine ? color : 'var(--theirs-bar)',
+                opacity: i / bars.length < progress ? 1 : 0.35
+              }}
             />
           ))}
         </div>
