@@ -4,7 +4,7 @@ import { Server } from 'socket.io'
 import multer from 'multer'
 import cors from 'cors'
 import { randomBytes } from 'crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync, unlink } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
@@ -73,13 +73,26 @@ app.post('/api/rooms/:code/notes', upload.single('audio'), (req, res) => {
     id: Date.now().toString(),
     senderId: req.body.senderId,
     audioUrl: `/uploads/${req.file.filename}`,
-    createdAt: Date.now()
+    createdAt: Date.now(),
+    duration: req.body.duration ? parseFloat(req.body.duration) : null
   }
   room.notes.push(note)
   save()
 
   io.to(req.params.code).emit('new-note', note)
   res.json(note)
+})
+
+// Elimina nota vocale
+app.delete('/api/rooms/:code/notes/:id', (req, res) => {
+  const room = data.rooms[req.params.code]
+  if (!room) return res.status(404).json({ error: 'Stanza non trovata' })
+  const idx = room.notes.findIndex(n => n.id === req.params.id)
+  if (idx === -1) return res.status(404).json({ error: 'Nota non trovata' })
+  const [note] = room.notes.splice(idx, 1)
+  save()
+  unlink(join(__dirname, note.audioUrl), () => {})
+  res.json({ ok: true })
 })
 
 // ── Socket.io ─────────────────────────────────────────

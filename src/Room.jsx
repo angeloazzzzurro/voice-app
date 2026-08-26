@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { io } from 'socket.io-client'
+import { useRecorder } from './useRecorder'
 
 function getMyId() {
   let id = localStorage.getItem('voice-notes-uid')
@@ -19,8 +20,13 @@ function getDayLabel(dateStr) {
   return d.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })
 }
 
+function fmtDur(s) {
+  if (!s) return '—'
+  return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
+}
+
 export default function Room({ roomDef, onLeave }) {
-  const { code: roomCode, name, icon, color, colorDark, colorBg } = roomDef
+  const { code: roomCode, name, icon, color } = roomDef
   const [notes, setNotes] = useState([])
   const [selectedDay, setSelectedDay] = useState(null)
   const myId = useMemo(() => getMyId(), [])
@@ -36,7 +42,6 @@ export default function Room({ roomDef, onLeave }) {
     return () => socket.disconnect()
   }, [roomCode])
 
-  // Group notes by day, today always present, newest first
   const days = useMemo(() => {
     const groups = {}
     notes.forEach(note => {
@@ -50,6 +55,8 @@ export default function Room({ roomDef, onLeave }) {
     return Object.entries(groups).sort((a, b) => new Date(b[0]) - new Date(a[0]))
   }, [notes])
 
+  const deleteNote = (noteId) => setNotes(prev => prev.filter(n => n.id !== noteId))
+
   if (selectedDay !== null) {
     const dayNotes = days.find(([k]) => k === selectedDay)?.[1] || []
     return (
@@ -60,6 +67,7 @@ export default function Room({ roomDef, onLeave }) {
         myId={myId}
         onBack={() => setSelectedDay(null)}
         onNewNote={note => setNotes(prev => [...prev, note])}
+        onDeleteNote={deleteNote}
       />
     )
   }
@@ -80,7 +88,6 @@ export default function Room({ roomDef, onLeave }) {
           <button
             key={dayKey}
             className="diary-day-card"
-            style={{ '--room-color': color }}
             onClick={() => setSelectedDay(dayKey)}
           >
             <div className="diary-day-left">
@@ -91,9 +98,7 @@ export default function Room({ roomDef, onLeave }) {
             </div>
             <div className="diary-day-right">
               {dayNotes.length > 0
-                ? <span className="diary-note-count" style={{ color, background: `${color}22`, borderColor: `${color}44` }}>
-                    {dayNotes.length} {dayNotes.length === 1 ? 'nota' : 'note'}
-                  </span>
+                ? <span className="diary-note-count">{dayNotes.length} {dayNotes.length === 1 ? 'nota' : 'note'}</span>
                 : <span className="diary-note-empty">Nessuna nota</span>
               }
               <span className="diary-arrow" style={{ color }}>›</span>
@@ -105,48 +110,33 @@ export default function Room({ roomDef, onLeave }) {
   )
 }
 
-function DayView({ roomDef, dayKey, notes, myId, onBack, onNewNote }) {
+/* ─── DAY VIEW ──────────────────────────────────────── */
+
+function DayView({ roomDef, dayKey, notes, myId, onBack, onNewNote, onDeleteNote }) {
   const { color } = roomDef
-  const [isRecording, setIsRecording] = useState(false)
   const [uploading, setUploading] = useState(false)
-  const mediaRecorderRef = useRef(null)
-  const chunksRef = useRef([])
+  const [liveBars, setLiveBars] = useState([])
+  const [playAllIdx, setPlayAllIdx] = useState(-1)
+  const rafRef = useRef(null)
+  const fileInputRef = useRef(null)
   const bottomRef = useRef(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [notes])
 
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const mr = new MediaRecorder(stream)
-      chunksRef.current = []
-      mr.ondataavailable = e => { if (e.data.size > 0) chunksRef.current.push(e.data) }
-      mr.onstop = async () => {
-        stream.getTracks().forEach(t => t.stop())
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
-        if (blob.size > 0) await sendNote(blob)
-      }
-      mediaRecorderRef.current = mr
-      mr.start()
-      setIsRecording(true)
-    } catch {
-      alert('Permesso microfono negato.')
-    }
-  }
+  useEffect(() => () => cancelAnimationFrame(rafRef.current), [])
 
-  const stopRecording = () => {
-    if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop()
-    setIsRecording(false)
-  }
+  // Stop play-all if notes change
+  useEffect(() => { setPlayAllIdx(-1) }, [dayKey])
 
-  const sendNote = async (blob) => {
+  const uploadNote = async (fileOrBlob, duration) => {
     setUploading(true)
     try {
       const form = new FormData()
-      form.append('audio', blob, 'nota.webm')
+      form.append('audio', fileOrBlob, fileOrBlob.name || 'nota.webm')
       form.append('senderId', myId)
+      if (duration != null) form.append('duration', duration.toFixed(2))
       const res = await fetch(`/api/rooms/${roomDef.code}/notes`, { method: 'POST', body: form })
       const note = await res.json()
       if (note?.id) onNewNote(note)
@@ -156,13 +146,63 @@ function DayView({ roomDef, dayKey, notes, myId, onBack, onNewNote }) {
     setUploading(false)
   }
 
-  const fileInputRef = useRef(null)
+  const { isRecording, start, stop } = useRecorder(async (blob, duration) => {
+    cancelAnimationFrame(rafRef.current)
+    setLiveBars([])
+    await uploadNote(blob, duration)
+  })
+
+  const startRecording = async () => {
+    await start((analyser) => {
+      const tick = () => {
+        const data = new Uint8Array(analyser.frequencyBinCount)
+        analyser.getByteFrequencyData(data)
+        setLiveBars(Array.from(data).map(v => Math.max(3, (v / 255) * 28)))
+        rafRef.current = requestAnimationFrame(tick)
+      }
+      tick()
+    })
+  }
+
+  const stopRecording = () => {
+    cancelAnimationFrame(rafRef.current)
+    stop()
+  }
 
   const handleFileUpload = async (e) => {
     const file = e.target.files[0]
     if (!file) return
     e.target.value = ''
-    await sendNote(file)
+    let duration = null
+    try {
+      duration = await new Promise(resolve => {
+        const a = new Audio()
+        a.onloadedmetadata = () => resolve(a.duration)
+        a.onerror = () => resolve(null)
+        a.src = URL.createObjectURL(file)
+      })
+    } catch {}
+    await uploadNote(file, duration)
+  }
+
+  const handleDelete = async (noteId) => {
+    try {
+      await fetch(`/api/rooms/${roomDef.code}/notes/${noteId}`, { method: 'DELETE' })
+      onDeleteNote(noteId)
+      if (playAllIdx >= 0) setPlayAllIdx(-1)
+    } catch {
+      alert("Errore durante l'eliminazione.")
+    }
+  }
+
+  const handlePlayAll = () => {
+    if (playAllIdx >= 0) { setPlayAllIdx(-1); return }
+    if (notes.length > 0) setPlayAllIdx(0)
+  }
+
+  const handleAutoEnd = (idx) => {
+    const next = idx + 1
+    setPlayAllIdx(next < notes.length ? next : -1)
   }
 
   const isToday = dayKey === new Date().toDateString()
@@ -177,7 +217,13 @@ function DayView({ roomDef, dayKey, notes, myId, onBack, onNewNote }) {
             {new Date(dayKey).toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' })}
           </span>
         </div>
-        <div style={{ width: '34px' }} />
+        {notes.length > 1 ? (
+          <button className="btn-play-all" onClick={handlePlayAll} style={{ color }}>
+            {playAllIdx >= 0 ? '⏹' : '▶▶'}
+          </button>
+        ) : (
+          <div style={{ width: '34px' }} />
+        )}
       </header>
 
       <div className="messages">
@@ -187,22 +233,30 @@ function DayView({ roomDef, dayKey, notes, myId, onBack, onNewNote }) {
             <p>Nessuna nota per questo giorno.</p>
             {isToday && (
               <>
-                <p className="empty-hint">Tieni premuto il microfono per registrare.</p>
-                <p className="empty-hint" style={{ color, marginTop: '0.5rem' }}>"{roomDef.prompt}"</p>
+                <p className="empty-hint">Tieni premuto 🎤 per registrare.</p>
+                <p className="empty-hint" style={{ color, marginTop: '0.3rem' }}>"{roomDef.prompt}"</p>
               </>
             )}
           </div>
         )}
 
-        {notes.map(note => (
-          <NoteMessage key={note.id} note={note} isMine={note.senderId === myId} color={color} />
+        {notes.map((note, idx) => (
+          <NoteMessage
+            key={note.id}
+            note={note}
+            isMine={note.senderId === myId}
+            color={color}
+            autoPlay={playAllIdx === idx}
+            onAutoEnd={() => handleAutoEnd(idx)}
+            onDelete={handleDelete}
+          />
         ))}
 
         {uploading && (
           <div className="message mine">
             <div className="bubble uploading-bubble">
               <span className="dot-pulse" />
-              Invio in corso...
+              Salvataggio...
             </div>
           </div>
         )}
@@ -212,11 +266,19 @@ function DayView({ roomDef, dayKey, notes, myId, onBack, onNewNote }) {
 
       {isToday && (
         <div className="record-bar">
-          <p className="record-hint">
-            {isRecording ? 'Rilascia per salvare' : 'Tieni premuto per registrare'}
-          </p>
+          {isRecording && liveBars.length > 0 ? (
+            <div className="live-waveform">
+              {liveBars.map((h, i) => (
+                <div key={i} className="live-bar" style={{ height: `${h}px`, background: color }} />
+              ))}
+            </div>
+          ) : (
+            <p className="record-hint">
+              {isRecording ? 'Rilascia per salvare' : 'Tieni premuto per registrare'}
+            </p>
+          )}
           <div className="record-actions">
-            <label className="btn-upload-file" title="Carica file audio (MP3, M4A, WAV…)">
+            <label className="btn-upload-file" title="Carica file audio">
               📎
               <input
                 ref={fileInputRef}
@@ -245,17 +307,28 @@ function DayView({ roomDef, dayKey, notes, myId, onBack, onNewNote }) {
   )
 }
 
-function NoteMessage({ note, isMine, color }) {
+/* ─── NOTE MESSAGE ──────────────────────────────────── */
+
+function NoteMessage({ note, isMine, color, autoPlay, onAutoEnd, onDelete }) {
   const [playing, setPlaying] = useState(false)
   const [progress, setProgress] = useState(0)
-  const [duration, setDuration] = useState(0)
+  const [duration, setDuration] = useState(note.duration || 0)
   const [currentTime, setCurrentTime] = useState(0)
+  const [swipeX, setSwipeX] = useState(0)
   const audioRef = useRef(null)
+  const touchRef = useRef({ x: 0, y: 0, tracking: false })
 
   const bars = useMemo(
     () => Array.from({ length: 24 }, () => Math.random() * 20 + 4),
     [note.id]
   )
+
+  // Auto-play quando è il turno
+  useEffect(() => {
+    if (autoPlay && audioRef.current) {
+      audioRef.current.play().catch(() => onAutoEnd?.())
+    }
+  }, [autoPlay])
 
   const toggle = () => {
     if (!audioRef.current) return
@@ -269,22 +342,59 @@ function NoteMessage({ note, isMine, color }) {
     audioRef.current.currentTime = pct * duration
   }
 
+  // Swipe to delete
+  const onTouchStart = e => {
+    touchRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, tracking: true }
+  }
+
+  const onTouchMove = e => {
+    if (!touchRef.current.tracking) return
+    const dx = e.touches[0].clientX - touchRef.current.x
+    const dy = Math.abs(e.touches[0].clientY - touchRef.current.y)
+    if (dy > 12 && Math.abs(dx) < dy) { touchRef.current.tracking = false; return }
+    if (dx < 0) {
+      setSwipeX(Math.max(dx, -72))
+      e.preventDefault()
+    } else if (swipeX < 0) {
+      setSwipeX(Math.min(0, swipeX + dx))
+    }
+  }
+
+  const onTouchEnd = () => {
+    touchRef.current.tracking = false
+    setSwipeX(s => s < -36 ? -72 : 0)
+  }
+
   const time = note.createdAt
     ? new Date(note.createdAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
     : ''
 
-  const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
-
   return (
-    <div className={`message ${isMine ? 'mine' : 'theirs'}`}>
-      <div className="bubble" style={isMine ? { background: `${color}33`, borderColor: `${color}66` } : {}}>
+    <div
+      className={`message ${isMine ? 'mine' : 'theirs'}`}
+      style={{
+        transform: `translateX(${swipeX}px)`,
+        transition: (swipeX === 0 || swipeX === -72) ? 'transform 0.2s ease' : 'none',
+        position: 'relative'
+      }}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+    >
+      <div
+        className="bubble"
+        style={isMine ? { background: `${color}30`, borderColor: `${color}50` } : {}}
+      >
         <audio
           ref={audioRef}
           src={note.audioUrl}
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}
-          onEnded={() => { setPlaying(false); setProgress(0); setCurrentTime(0) }}
-          onLoadedMetadata={e => setDuration(e.target.duration)}
+          onEnded={() => {
+            setPlaying(false); setProgress(0); setCurrentTime(0)
+            if (autoPlay) onAutoEnd?.()
+          }}
+          onLoadedMetadata={e => { if (!note.duration) setDuration(e.target.duration) }}
           onTimeUpdate={e => {
             setCurrentTime(e.target.currentTime)
             setProgress(e.target.currentTime / (e.target.duration || 1))
@@ -302,7 +412,7 @@ function NoteMessage({ note, isMine, color }) {
               className="bar"
               style={{
                 height: `${h}px`,
-                background: isMine ? color : 'var(--theirs-bar)',
+                background: isMine ? color : 'rgba(255,255,255,0.5)',
                 opacity: i / bars.length < progress ? 1 : 0.35
               }}
             />
@@ -310,10 +420,20 @@ function NoteMessage({ note, isMine, color }) {
         </div>
 
         <div className="meta">
-          <span className="dur">{duration ? fmt(playing ? currentTime : duration) : '—'}</span>
+          <span className="dur">{duration ? fmtDur(playing ? currentTime : duration) : '—'}</span>
           <span className="ts">{time}</span>
         </div>
       </div>
+
+      {swipeX <= -36 && (
+        <button
+          className="swipe-delete-btn"
+          onClick={() => onDelete(note.id)}
+          style={{ opacity: Math.min(1, Math.abs(swipeX) / 72) }}
+        >
+          🗑
+        </button>
+      )}
     </div>
   )
 }
