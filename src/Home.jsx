@@ -24,7 +24,7 @@ function fmtTotalDur(seconds) {
   return m < 60 ? `${m} min` : `${Math.floor(m / 60)}h ${m % 60}m`
 }
 
-export default function Home({ onEnterRoom, onGuide }) {
+export default function Home({ onEnterRoom, onGuide, onLogout }) {
   const [roomCodes, setRoomCodes] = useState({})
   const [notesByRoom, setNotesByRoom] = useState({})
   const [currentMonth, setCurrentMonth] = useState(() => {
@@ -118,7 +118,10 @@ export default function Home({ onEnterRoom, onGuide }) {
             <span className="streak-badge">🔥 {streak} {streak === 1 ? 'giorno' : 'giorni'}</span>
           )}
         </div>
-        <button className="btn-guide" onClick={onGuide}>Guida</button>
+        <div className="home-nav-actions">
+          <button className="btn-guide" onClick={onGuide}>Guida</button>
+          <button className="btn-guide" onClick={onLogout}>Esci</button>
+        </div>
       </header>
 
       <div className="diary-scroll">

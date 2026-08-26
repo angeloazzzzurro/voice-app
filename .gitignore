@@ -4,3 +4,4 @@ uploads/
 data.json
 *.log
 .env
+PASSWORD.txt
