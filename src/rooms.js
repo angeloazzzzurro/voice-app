@@ -24,7 +24,7 @@ export const ROOM_DEFS = [
   {
     id: 'gratitudine',
     name: 'Gratitudine',
-    icon: '🌿',
+    icon: '🪴',
     color: '#C8F7DC',
     colorDark: '#65AE82',
     colorBg: '#F0FFF6',

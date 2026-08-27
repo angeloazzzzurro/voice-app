@@ -24,7 +24,15 @@ function fmtTotalDur(seconds) {
   return m < 60 ? `${m} min` : `${Math.floor(m / 60)}h ${m % 60}m`
 }
 
+const TABS = [
+  { id: 'diario', label: 'Diario', icon: '💬' },
+  { id: 'stanze', label: 'Stanze', icon: '🏠' },
+  { id: 'sfide', label: 'Sfide', icon: '🏆' },
+  { id: 'impostazioni', label: 'Impostazioni', icon: '⚙️' },
+]
+
 export default function Home({ onEnterRoom, onGuide, onLogout }) {
+  const [tab, setTab] = useState('diario')
   const [roomCodes, setRoomCodes] = useState({})
   const [notesByRoom, setNotesByRoom] = useState({})
   const [currentMonth, setCurrentMonth] = useState(() => {
@@ -113,64 +121,78 @@ export default function Home({ onEnterRoom, onGuide, onLogout }) {
     <div className="home-diary">
       <header className="home-nav">
         <div className="home-nav-title">
-          <span className="home-large-title">Diario Vocale</span>
+          <span className="home-large-title">
+            <span className="home-title-star" aria-hidden>⭐</span>Diario Vocale
+          </span>
           {streak > 0 && (
             <span className="streak-badge">🔥 {streak} {streak === 1 ? 'giorno' : 'giorni'}</span>
           )}
         </div>
         <div className="home-nav-actions">
-          <button className="btn-guide" onClick={onGuide}>Guida</button>
-          <button className="btn-guide" onClick={onLogout}>Esci</button>
+          <button className="btn-guide" onClick={onGuide}>📖 Guida</button>
+          <button className="btn-guide btn-logout" onClick={onLogout}>🚪 Esci</button>
         </div>
       </header>
 
+      <nav className="home-tabs">
+        {TABS.map(t => (
+          <button
+            key={t.id}
+            className={`home-tab${tab === t.id ? ' active' : ''}`}
+            onClick={() => setTab(t.id)}
+          >
+            <span className="home-tab-icon" aria-hidden>{t.icon}</span>
+            {t.label}
+          </button>
+        ))}
+      </nav>
+
       <div className="diary-scroll">
-        <Calendar
-          currentMonth={currentMonth}
-          onPrev={() => setCurrentMonth(m => { const d = new Date(m); d.setMonth(d.getMonth()-1); return d })}
-          onNext={() => setCurrentMonth(m => { const d = new Date(m); d.setMonth(d.getMonth()+1); return d })}
-          dotsByDay={dotsByDay}
-        />
+        {tab === 'diario' && (
+          <>
+            <Calendar
+              currentMonth={currentMonth}
+              onPrev={() => setCurrentMonth(m => { const d = new Date(m); d.setMonth(d.getMonth()-1); return d })}
+              onNext={() => setCurrentMonth(m => { const d = new Date(m); d.setMonth(d.getMonth()+1); return d })}
+              dotsByDay={dotsByDay}
+            />
 
-        <div className="section-header"><span className="section-title">Stanze</span></div>
-        <div className="rooms-section">
-          {loading ? (
-            <div className="rooms-grid">
-              {Array(5).fill(0).map((_, i) => (
-                <div key={i} className={`room-card skeleton${i === 4 ? ' skeleton-full' : ''}`} />
-              ))}
-            </div>
-          ) : (
-            <div className="rooms-grid">
-              {ROOM_DEFS.map(room => (
-                <button
-                  key={room.id}
-                  className="room-card"
-                  style={{ '--room-color': room.color, '--room-bg': room.colorBg }}
-                  onClick={() => enterRoom(room)}
-                >
-                  <div className="room-card-icon">{room.icon}</div>
-                  <div className="room-card-body">
-                    <span className="room-card-name">{room.name}</span>
-                    <span className="room-card-desc">{room.description}</span>
-                    <span className="room-card-prompt">"{room.prompt}"</span>
-                  </div>
-                  {countByRoom[room.id] > 0 && (
-                    <div className="room-card-count">
-                      <span className="room-note-badge">{countByRoom[room.id]}</span>
-                      {durByRoom[room.id] > 0 && (
-                        <span className="room-dur-badge">{fmtTotalDur(durByRoom[room.id])}</span>
-                      )}
-                    </div>
-                  )}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+            <div className="section-header"><span className="section-title">Stanze</span></div>
+            <RoomsGrid loading={loading} countByRoom={countByRoom} durByRoom={durByRoom} enterRoom={enterRoom} />
 
-        <div className="section-header"><span className="section-title">Legenda</span></div>
-        <div style={{ padding: '0 1rem' }}><Legend /></div>
+            <div className="section-header"><span className="section-title">Legenda</span></div>
+            <div style={{ padding: '0 1rem' }}><Legend /></div>
+
+            <div className="garden-footer">
+              <span className="garden-mailbox" aria-hidden>📮</span>
+              <span className="garden-speech">Miao! 💕</span>
+              <span className="garden-cat" aria-hidden>🐱</span>
+            </div>
+          </>
+        )}
+
+        {tab === 'stanze' && (
+          <>
+            <div className="section-header"><span className="section-title">Stanze</span></div>
+            <RoomsGrid loading={loading} countByRoom={countByRoom} durByRoom={durByRoom} enterRoom={enterRoom} />
+          </>
+        )}
+
+        {tab === 'sfide' && (
+          <div className="placeholder-view">
+            <span className="placeholder-icon" aria-hidden>🏆</span>
+            <span className="placeholder-title">Sfide in arrivo</span>
+            <span>Presto potrai sbloccare traguardi e sfide del diario.</span>
+          </div>
+        )}
+
+        {tab === 'impostazioni' && (
+          <div className="placeholder-view">
+            <span className="placeholder-icon" aria-hidden>⚙️</span>
+            <span className="placeholder-title">Impostazioni in arrivo</span>
+            <span>Qui potrai personalizzare il tuo diario vocale.</span>
+          </div>
+        )}
       </div>
 
       {!fabOpen && <button className="fab" onClick={openFab}>🎤</button>}
@@ -187,6 +209,50 @@ export default function Home({ onEnterRoom, onGuide, onLogout }) {
           onNote={handleFabNote}
           setUploading={setFabUploading}
         />
+      )}
+    </div>
+  )
+}
+
+/* ─── ROOMS GRID ────────────────────────────────────── */
+
+function RoomsGrid({ loading, countByRoom, durByRoom, enterRoom }) {
+  return (
+    <div className="rooms-section">
+      {loading ? (
+        <div className="rooms-grid">
+          {Array(5).fill(0).map((_, i) => (
+            <div key={i} className={`room-card skeleton${i === 4 ? ' skeleton-full' : ''}`} />
+          ))}
+        </div>
+      ) : (
+        <div className="rooms-grid">
+          {ROOM_DEFS.map(room => (
+            <button
+              key={room.id}
+              className="room-card"
+              style={{ '--room-color': room.color, '--room-bg': room.colorBg }}
+              onClick={() => enterRoom(room)}
+            >
+              <span className="room-card-star" aria-hidden>⭐</span>
+              <div className="room-card-icon">{room.icon}</div>
+              <div className="room-card-body">
+                <span className="room-card-name">{room.name}</span>
+                <span className="room-card-desc">{room.description}</span>
+                <span className="room-card-prompt">"{room.prompt}"</span>
+              </div>
+              <span className="room-card-watermark" aria-hidden>{room.icon}</span>
+              {countByRoom[room.id] > 0 && (
+                <div className="room-card-count">
+                  <span className="room-note-badge">{countByRoom[room.id]}</span>
+                  {durByRoom[room.id] > 0 && (
+                    <span className="room-dur-badge">{fmtTotalDur(durByRoom[room.id])}</span>
+                  )}
+                </div>
+              )}
+            </button>
+          ))}
+        </div>
       )}
     </div>
   )
@@ -301,16 +367,17 @@ function Calendar({ currentMonth, onPrev, onNext, dotsByDay }) {
           <button className="cal-nav" onClick={onNext}>›</button>
         </div>
         <div className="cal-grid">
-          {DOW.map((d, i) => <div key={i} className="cal-dow">{d}</div>)}
+          {DOW.map((d, i) => <div key={i} className={`cal-dow${i >= 5 ? ' cal-weekend' : ''}`}>{d}</div>)}
           {days.map((date, i) => {
             if (!date) return <div key={`e-${i}`} />
             const isToday = date.toDateString() === today.toDateString()
+            const isWeekend = ((date.getDay() + 6) % 7) >= 5
             const dots = dotsByDay[date.toDateString()]
               ? ROOM_DEFS.filter(r => dotsByDay[date.toDateString()].has(r.id))
               : []
             return (
               <div key={date.toISOString()} className={`cal-day${isToday ? ' cal-today' : ''}`}>
-                <span className="cal-day-num">{date.getDate()}</span>
+                <span className={`cal-day-num${isWeekend ? ' cal-weekend' : ''}`}>{date.getDate()}</span>
                 {dots.length > 0 && (
                   <div className="cal-dots">
                     {dots.map(r => <span key={r.id} className="cal-dot" style={{ background: r.color }} />)}
@@ -320,6 +387,8 @@ function Calendar({ currentMonth, onPrev, onNext, dotsByDay }) {
             )
           })}
         </div>
+        <span className="calendar-decor calendar-decor-left" aria-hidden>🌳</span>
+        <span className="calendar-decor calendar-decor-right" aria-hidden>🌸</span>
       </div>
     </div>
   )
