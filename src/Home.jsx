@@ -1,21 +1,9 @@
 import { useState, useEffect, useMemo } from 'react'
+import { collection, onSnapshot, addDoc, query, orderBy } from 'firebase/firestore'
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
+import { db, storage } from './firebase'
 import { ROOM_DEFS } from './rooms'
 import { useRecorder } from './useRecorder'
-
-async function getOrCreateRoomCode(roomId) {
-  const key = `diary-room-${roomId}`
-  const existing = localStorage.getItem(key)
-  if (existing) {
-    try {
-      const res = await fetch(`/api/rooms/${existing}`)
-      if (res.ok) return existing
-    } catch {}
-  }
-  const res = await fetch('/api/rooms', { method: 'POST' })
-  const { code } = await res.json()
-  localStorage.setItem(key, code)
-  return code
-}
 
 function fmtTotalDur(seconds) {
   if (!seconds) return null
@@ -24,11 +12,10 @@ function fmtTotalDur(seconds) {
   return m < 60 ? `${m} min` : `${Math.floor(m / 60)}h ${m % 60}m`
 }
 
-export default function Home({ onEnterRoom, onGuide, onLogout }) {
-  const [roomCodes, setRoomCodes] = useState({})
+export default function Home({ uid, user, onEnterRoom, onGuide, onStats, onNotesLoaded, onSignOut }) {
   const [notesByRoom, setNotesByRoom] = useState({})
   const [currentMonth, setCurrentMonth] = useState(() => {
-    const d = new Date(); d.setDate(1); d.setHours(0,0,0,0); return d
+    const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d
   })
   const [loading, setLoading] = useState(true)
   const [fabOpen, setFabOpen] = useState(false)
@@ -36,25 +23,26 @@ export default function Home({ onEnterRoom, onGuide, onLogout }) {
   const [fabRoom, setFabRoom] = useState(null)
   const [fabUploading, setFabUploading] = useState(false)
 
+  // Carica note da Firestore con listener real-time
   useEffect(() => {
-    let cancelled = false
-    async function init() {
-      const codes = {}
-      const notes = {}
-      await Promise.all(ROOM_DEFS.map(async room => {
-        const code = await getOrCreateRoomCode(room.id)
-        codes[room.id] = code
-        try {
-          const res = await fetch(`/api/rooms/${code}`)
-          const data = await res.json()
-          notes[room.id] = data.notes || []
-        } catch { notes[room.id] = [] }
-      }))
-      if (!cancelled) { setRoomCodes(codes); setNotesByRoom(notes); setLoading(false) }
-    }
-    init()
-    return () => { cancelled = true }
-  }, [])
+    if (!uid) return
+    const unsubs = ROOM_DEFS.map(room => {
+      const q = query(
+        collection(db, 'users', uid, 'rooms', room.id, 'notes'),
+        orderBy('createdAt', 'asc')
+      )
+      return onSnapshot(q, snap => {
+        const notes = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        setNotesByRoom(prev => ({ ...prev, [room.id]: notes }))
+      })
+    })
+    setLoading(false)
+    return () => unsubs.forEach(u => u())
+  }, [uid])
+
+  useEffect(() => {
+    onNotesLoaded(notesByRoom)
+  }, [notesByRoom])
 
   const dotsByDay = useMemo(() => {
     const map = {}
@@ -97,11 +85,6 @@ export default function Home({ onEnterRoom, onGuide, onLogout }) {
     return count
   }, [notesByRoom])
 
-  const enterRoom = roomDef => {
-    const code = roomCodes[roomDef.id]
-    if (code) onEnterRoom({ ...roomDef, code })
-  }
-
   const openFab = () => { setFabStep('pick'); setFabRoom(null); setFabOpen(true) }
   const closeFab = () => { setFabOpen(false); setFabRoom(null) }
 
@@ -118,17 +101,25 @@ export default function Home({ onEnterRoom, onGuide, onLogout }) {
             <span className="streak-badge">🔥 {streak} {streak === 1 ? 'giorno' : 'giorni'}</span>
           )}
         </div>
-        <div className="home-nav-actions">
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <button className="btn-guide" onClick={onStats} title="Statistiche">📊</button>
           <button className="btn-guide" onClick={onGuide}>Guida</button>
-          <button className="btn-guide" onClick={onLogout}>Esci</button>
+          <button
+            className="btn-guide"
+            onClick={onSignOut}
+            title={`Esci (${user?.email})`}
+            style={{ fontSize: '0.8rem' }}
+          >
+            Esci
+          </button>
         </div>
       </header>
 
       <div className="diary-scroll">
         <Calendar
           currentMonth={currentMonth}
-          onPrev={() => setCurrentMonth(m => { const d = new Date(m); d.setMonth(d.getMonth()-1); return d })}
-          onNext={() => setCurrentMonth(m => { const d = new Date(m); d.setMonth(d.getMonth()+1); return d })}
+          onPrev={() => setCurrentMonth(m => { const d = new Date(m); d.setMonth(d.getMonth() - 1); return d })}
+          onNext={() => setCurrentMonth(m => { const d = new Date(m); d.setMonth(d.getMonth() + 1); return d })}
           dotsByDay={dotsByDay}
         />
 
@@ -147,7 +138,7 @@ export default function Home({ onEnterRoom, onGuide, onLogout }) {
                   key={room.id}
                   className="room-card"
                   style={{ '--room-color': room.color, '--room-bg': room.colorBg }}
-                  onClick={() => enterRoom(room)}
+                  onClick={() => onEnterRoom(room)}
                 >
                   <div className="room-card-icon">{room.icon}</div>
                   <div className="room-card-body">
@@ -177,9 +168,9 @@ export default function Home({ onEnterRoom, onGuide, onLogout }) {
 
       {fabOpen && (
         <QuickRecord
+          uid={uid}
           step={fabStep}
           selectedRoom={fabRoom}
-          roomCodes={roomCodes}
           uploading={fabUploading}
           onPickRoom={room => { setFabRoom(room); setFabStep('record') }}
           onBack={() => fabStep === 'record' ? setFabStep('pick') : closeFab()}
@@ -194,20 +185,24 @@ export default function Home({ onEnterRoom, onGuide, onLogout }) {
 
 /* ─── QUICK RECORD SHEET ────────────────────────────── */
 
-function QuickRecord({ step, selectedRoom, roomCodes, uploading, onPickRoom, onBack, onClose, onNote, setUploading }) {
+function QuickRecord({ uid, step, selectedRoom, uploading, onPickRoom, onBack, onClose, onNote, setUploading }) {
   const { isRecording, start, stop } = useRecorder(async (blob, duration) => {
-    if (!selectedRoom) return
+    if (!selectedRoom || !uid) return
     setUploading(true)
     try {
-      const code = roomCodes[selectedRoom.id]
-      const myId = localStorage.getItem('voice-notes-uid') || 'anon'
-      const form = new FormData()
-      form.append('audio', blob, 'nota.webm')
-      form.append('senderId', myId)
-      if (duration) form.append('duration', duration.toFixed(2))
-      const res = await fetch(`/api/rooms/${code}/notes`, { method: 'POST', body: form })
-      const note = await res.json()
-      if (note?.id) onNote(note, selectedRoom.id)
+      const path = `users/${uid}/audio/${Date.now()}.webm`
+      const storageRef = ref(storage, path)
+      await uploadBytes(storageRef, blob)
+      const audioUrl = await getDownloadURL(storageRef)
+      const notesRef = collection(db, 'users', uid, 'rooms', selectedRoom.id, 'notes')
+      const docRef = await addDoc(notesRef, {
+        audioUrl,
+        audioPath: path,
+        senderId: uid,
+        createdAt: Date.now(),
+        duration: duration ? parseFloat(duration.toFixed(2)) : null
+      })
+      onNote({ id: docRef.id, audioUrl, audioPath: path, senderId: uid, createdAt: Date.now(), duration }, selectedRoom.id)
       onClose()
     } catch { alert("Errore durante l'invio.") }
     setUploading(false)

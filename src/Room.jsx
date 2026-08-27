@@ -1,15 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { io } from 'socket.io-client'
+import { collection, onSnapshot, addDoc, deleteDoc, doc, query, orderBy } from 'firebase/firestore'
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'
+import { db, storage } from './firebase'
 import { useRecorder } from './useRecorder'
-
-function getMyId() {
-  let id = localStorage.getItem('voice-notes-uid')
-  if (!id) {
-    id = Math.random().toString(36).substring(2) + Date.now().toString(36)
-    localStorage.setItem('voice-notes-uid', id)
-  }
-  return id
-}
 
 function getDayLabel(dateStr) {
   const d = new Date(dateStr)
@@ -25,22 +18,23 @@ function fmtDur(s) {
   return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
 }
 
-export default function Room({ roomDef, onLeave }) {
-  const { code: roomCode, name, icon, color } = roomDef
+export default function Room({ roomDef, uid, onLeave }) {
+  const { id: roomId, name, icon, color } = roomDef
   const [notes, setNotes] = useState([])
   const [selectedDay, setSelectedDay] = useState(null)
-  const myId = useMemo(() => getMyId(), [])
 
+  // Firestore real-time listener (sostituisce socket.io)
   useEffect(() => {
-    fetch(`/api/rooms/${roomCode}`)
-      .then(r => r.json())
-      .then(d => setNotes(d.notes || []))
-
-    const socket = io()
-    socket.emit('join-room', roomCode)
-    socket.on('new-note', note => setNotes(prev => [...prev, note]))
-    return () => socket.disconnect()
-  }, [roomCode])
+    if (!uid) return
+    const q = query(
+      collection(db, 'users', uid, 'rooms', roomId, 'notes'),
+      orderBy('createdAt', 'asc')
+    )
+    const unsub = onSnapshot(q, snap => {
+      setNotes(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    })
+    return unsub
+  }, [uid, roomId])
 
   const days = useMemo(() => {
     const groups = {}
@@ -55,16 +49,16 @@ export default function Room({ roomDef, onLeave }) {
     return Object.entries(groups).sort((a, b) => new Date(b[0]) - new Date(a[0]))
   }, [notes])
 
-  const deleteNote = (noteId) => setNotes(prev => prev.filter(n => n.id !== noteId))
+  const deleteNote = noteId => setNotes(prev => prev.filter(n => n.id !== noteId))
 
   if (selectedDay !== null) {
     const dayNotes = days.find(([k]) => k === selectedDay)?.[1] || []
     return (
       <DayView
         roomDef={roomDef}
+        uid={uid}
         dayKey={selectedDay}
         notes={dayNotes}
-        myId={myId}
         onBack={() => setSelectedDay(null)}
         onNewNote={note => setNotes(prev => [...prev, note])}
         onDeleteNote={deleteNote}
@@ -112,11 +106,12 @@ export default function Room({ roomDef, onLeave }) {
 
 /* ─── DAY VIEW ──────────────────────────────────────── */
 
-function DayView({ roomDef, dayKey, notes, myId, onBack, onNewNote, onDeleteNote }) {
-  const { color } = roomDef
+function DayView({ roomDef, uid, dayKey, notes, onBack, onNewNote, onDeleteNote }) {
+  const { id: roomId, color } = roomDef
   const [uploading, setUploading] = useState(false)
   const [liveBars, setLiveBars] = useState([])
   const [playAllIdx, setPlayAllIdx] = useState(-1)
+  const [undoToast, setUndoToast] = useState(null) // { noteId, audioPath, note, timer }
   const rafRef = useRef(null)
   const fileInputRef = useRef(null)
   const bottomRef = useRef(null)
@@ -126,20 +121,32 @@ function DayView({ roomDef, dayKey, notes, myId, onBack, onNewNote, onDeleteNote
   }, [notes])
 
   useEffect(() => () => cancelAnimationFrame(rafRef.current), [])
-
-  // Stop play-all if notes change
   useEffect(() => { setPlayAllIdx(-1) }, [dayKey])
 
   const uploadNote = async (fileOrBlob, duration) => {
     setUploading(true)
+    const ext = fileOrBlob.name ? fileOrBlob.name.split('.').pop() : 'webm'
+    const path = `users/${uid}/audio/${Date.now()}.${ext}`
+    const storageRef = ref(storage, path)
     try {
-      const form = new FormData()
-      form.append('audio', fileOrBlob, fileOrBlob.name || 'nota.webm')
-      form.append('senderId', myId)
-      if (duration != null) form.append('duration', duration.toFixed(2))
-      const res = await fetch(`/api/rooms/${roomDef.code}/notes`, { method: 'POST', body: form })
-      const note = await res.json()
-      if (note?.id) onNewNote(note)
+      await uploadBytes(storageRef, fileOrBlob)
+      const audioUrl = await getDownloadURL(storageRef)
+      const notesRef = collection(db, 'users', uid, 'rooms', roomId, 'notes')
+      let docRef
+      try {
+        docRef = await addDoc(notesRef, {
+          audioUrl,
+          audioPath: path,
+          senderId: uid,
+          createdAt: Date.now(),
+          duration: duration != null ? parseFloat(duration.toFixed(2)) : null
+        })
+      } catch {
+        // Firestore fallito: rimuovi il file già caricato su Storage
+        await deleteObject(storageRef).catch(() => {})
+        throw new Error('Firestore write failed')
+      }
+      onNewNote({ id: docRef.id, audioUrl, audioPath: path, senderId: uid, createdAt: Date.now(), duration })
     } catch {
       alert("Errore durante l'invio. Riprova.")
     }
@@ -185,14 +192,38 @@ function DayView({ roomDef, dayKey, notes, myId, onBack, onNewNote, onDeleteNote
     await uploadNote(file, duration)
   }
 
-  const handleDelete = async (noteId) => {
-    try {
-      await fetch(`/api/rooms/${roomDef.code}/notes/${noteId}`, { method: 'DELETE' })
-      onDeleteNote(noteId)
-      if (playAllIdx >= 0) setPlayAllIdx(-1)
-    } catch {
-      alert("Errore durante l'eliminazione.")
+  const handleDelete = (noteId, audioPath, note) => {
+    // Rimuovi subito dalla UI
+    onDeleteNote(noteId)
+    if (playAllIdx >= 0) setPlayAllIdx(-1)
+
+    // Annulla eventuale toast precedente
+    if (undoToast) {
+      clearTimeout(undoToast.timer)
+      commitDelete(undoToast.noteId, undoToast.audioPath)
     }
+
+    // Avvia timer da 3s per eliminazione definitiva
+    const timer = setTimeout(() => {
+      commitDelete(noteId, audioPath)
+      setUndoToast(null)
+    }, 3000)
+
+    setUndoToast({ noteId, audioPath, note, timer })
+  }
+
+  const commitDelete = async (noteId, audioPath) => {
+    try {
+      await deleteDoc(doc(db, 'users', uid, 'rooms', roomId, 'notes', noteId))
+      if (audioPath) await deleteObject(ref(storage, audioPath)).catch(() => {})
+    } catch { /* silent */ }
+  }
+
+  const handleUndo = () => {
+    if (!undoToast) return
+    clearTimeout(undoToast.timer)
+    onNewNote(undoToast.note) // ripristina nella UI
+    setUndoToast(null)
   }
 
   const handlePlayAll = () => {
@@ -244,7 +275,7 @@ function DayView({ roomDef, dayKey, notes, myId, onBack, onNewNote, onDeleteNote
           <NoteMessage
             key={note.id}
             note={note}
-            isMine={note.senderId === myId}
+            isMine={note.senderId === uid}
             color={color}
             autoPlay={playAllIdx === idx}
             onAutoEnd={() => handleAutoEnd(idx)}
@@ -263,6 +294,13 @@ function DayView({ roomDef, dayKey, notes, myId, onBack, onNewNote, onDeleteNote
 
         <div ref={bottomRef} />
       </div>
+
+      {undoToast && (
+        <div className="undo-toast">
+          <span>Nota eliminata</span>
+          <button className="undo-toast-btn" onClick={handleUndo}>Annulla</button>
+        </div>
+      )}
 
       {isToday && (
         <div className="record-bar">
@@ -315,6 +353,7 @@ function NoteMessage({ note, isMine, color, autoPlay, onAutoEnd, onDelete }) {
   const [duration, setDuration] = useState(note.duration || 0)
   const [currentTime, setCurrentTime] = useState(0)
   const [swipeX, setSwipeX] = useState(0)
+  const [hovered, setHovered] = useState(false)
   const audioRef = useRef(null)
   const touchRef = useRef({ x: 0, y: 0, tracking: false })
 
@@ -323,7 +362,6 @@ function NoteMessage({ note, isMine, color, autoPlay, onAutoEnd, onDelete }) {
     [note.id]
   )
 
-  // Auto-play quando è il turno
   useEffect(() => {
     if (autoPlay && audioRef.current) {
       audioRef.current.play().catch(() => onAutoEnd?.())
@@ -342,7 +380,6 @@ function NoteMessage({ note, isMine, color, autoPlay, onAutoEnd, onDelete }) {
     audioRef.current.currentTime = pct * duration
   }
 
-  // Swipe to delete
   const onTouchStart = e => {
     touchRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, tracking: true }
   }
@@ -380,6 +417,8 @@ function NoteMessage({ note, isMine, color, autoPlay, onAutoEnd, onDelete }) {
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
       <div
         className="bubble"
@@ -428,8 +467,16 @@ function NoteMessage({ note, isMine, color, autoPlay, onAutoEnd, onDelete }) {
       {swipeX <= -36 && (
         <button
           className="swipe-delete-btn"
-          onClick={() => onDelete(note.id)}
+          onClick={() => onDelete(note.id, note.audioPath, note)}
           style={{ opacity: Math.min(1, Math.abs(swipeX) / 72) }}
+        >
+          🗑
+        </button>
+      )}
+      {hovered && swipeX === 0 && (
+        <button
+          className="hover-delete-btn"
+          onClick={() => onDelete(note.id, note.audioPath, note)}
         >
           🗑
         </button>
