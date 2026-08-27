@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { getAllRooms } from './rooms'
+import { ROOM_DEFS } from './rooms'
 
 function fmtDur(s) {
   if (!s) return '0s'
@@ -20,7 +20,7 @@ function computeStreak(allNotes) {
 }
 
 export default function Stats({ notesByRoom, roomCodes, onBack }) {
-  const ROOMS = getAllRooms()
+  const ROOMS = ROOM_DEFS
 
   const allNotes = useMemo(() =>
     ROOMS.flatMap(r => notesByRoom[r.id] || []),

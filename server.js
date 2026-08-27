@@ -162,9 +162,14 @@ const storage = multer.diskStorage({
 })
 const upload = multer({
   storage,
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB max
   fileFilter: (_, file, cb) => {
     const ext = file.originalname.split('.').pop().toLowerCase()
-    cb(null, file.mimetype.startsWith('audio/') || ALLOWED_AUDIO.includes(ext))
+    if (file.mimetype.startsWith('audio/') || ALLOWED_AUDIO.includes(ext)) {
+      cb(null, true)
+    } else {
+      cb(new Error('Tipo file non consentito'))
+    }
   }
 })
 
@@ -189,6 +194,7 @@ app.get('/api/rooms/:code', (req, res) => {
 
 // Carica nota vocale
 app.post('/api/rooms/:code/notes', upload.single('audio'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'File audio mancante o non valido' })
   const room = data.rooms[req.params.code]
   if (!room) return res.status(404).json({ error: 'Stanza non trovata' })
 
@@ -216,6 +222,13 @@ app.delete('/api/rooms/:code/notes/:id', (req, res) => {
   save()
   unlink(join(__dirname, note.audioUrl), () => {})
   res.json({ ok: true })
+})
+
+// Error handler per multer (file troppo grande, tipo non valido)
+app.use((err, req, res, next) => {
+  if (err?.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'File troppo grande (max 50 MB)' })
+  if (err?.message === 'Tipo file non consentito') return res.status(415).json({ error: err.message })
+  next(err)
 })
 
 // ── Socket.io ─────────────────────────────────────────

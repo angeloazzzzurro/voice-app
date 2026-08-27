@@ -12,6 +12,7 @@ export function useRecorder(onComplete) {
   const analyserCtxRef = useRef(null)
 
   const start = async (onAnalyserReady) => {
+    if (mrRef.current?.state === 'recording') return
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
 
